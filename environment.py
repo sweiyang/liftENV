@@ -41,7 +41,6 @@ building = Building(buildingsDATA, NUM_LIFTS, NUM_FLOORS, 0)
 
 
 def generatingData():
-    comingBackArray = np.ndarray(shape=(NUM_FLOORS, 24, MAX_PERSON), dtype=Person)
     timestepArray = building.buildingArr
     # go out of the house
     data = 0
@@ -59,7 +58,7 @@ def generatingData():
                 for j in range(10):
                     # including those that are coming home at that timestepHours
                     if comingBackArray[0][timestepHours][j] is not None:
-                        person = comingBackArray[n][timestepHours][j]
+                        person = comingBackArray[0][timestepHours][j]
                         timestepArray[person.dest][j] = person
             if x != MAX_PERSON:
                 timestepArray[positionHome][x] = Person(timestepHours, 0, positionHome)
@@ -189,10 +188,14 @@ def calculateCost(building):
 def printObsSpace():
     for n in range(NUM_FLOORS):
         print(observation_space[NUM_FLOORS - n - 1])
-# creating objects
-r_All = 0
+        
 os.system('cls')
 for e in range(NUM_EPISODES):
+    r_All = 0   
+    # reintialize you can remove the top part if you want 
+    buildingsDATA = np.ndarray(shape=(NUM_FLOORS, MAX_PERSON), dtype=Person)
+    comingBackArray = np.ndarray(shape=(NUM_FLOORS, 24, MAX_PERSON), dtype=Person)
+    building = Building(buildingsDATA, NUM_LIFTS, NUM_FLOORS, 0)
     while timestepHours != 24:
 
 
