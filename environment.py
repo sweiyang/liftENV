@@ -161,9 +161,9 @@ def dropPassenger(index, building):
                     # generate coming back data
                     timestepHoursBack = np.random.randint(timestepHours, 24)
                     j = 0
-                    while x < MAX_PERSON and comingBackArray[0][timestepHoursBack][j] is not None:
+                    while j < MAX_PERSON and comingBackArray[0][timestepHoursBack][j] is not None:
                         j = j + 1
-                    if x < MAX_PERSON:
+                    if j < MAX_PERSON:
                         comingBackArray[0][timestepHoursBack][j] = Person(timestepHours, carrying[x].position, 0)
                         print('=== Person coming back at', timestepHoursBack,  '====')
                 del carrying[x]
