@@ -158,7 +158,10 @@ def dropPassenger(index, building):
             if carrying[x].dest == lift.position:
                 if groundFloor:
                     # generate coming back data
-                    timestepHoursBack = np.random.randint(timestepHours, 24)
+                    if timestepHours != 24:
+                        timestepHoursBack = np.random.randint(timestepHours, 24)
+                    else:
+                        timestepHoursBack = 0
                     j = 0
                     while j < MAX_PERSON and comingBackArray[0][timestepHoursBack][j] is not None:
                         j = j + 1
