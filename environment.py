@@ -1,7 +1,9 @@
-import numpy as np
 import random
+
+import numpy as np
 import math
 import os
+
 # initializing hyper parameters
 from Obj import Person, Building
 
@@ -13,16 +15,14 @@ timestepHours = 0
 MAX_PERSON = 10
 NUM_EPISODES = 1
 
-action_space = np.ndarray(shape=(ACTION_SPACE_n, NUM_LIFTS), dtype=int)
 # initializing action space
+action_space = np.ndarray(shape=(ACTION_SPACE_n, NUM_LIFTS), dtype=int)
 x = 0
 for i in range(3):
     for j in range(3):
         action_space[x][0] = i
         action_space[x][1] = j
         x = x + 1
-
-# print(action_space)
 
 # initializing observational space
 '''
@@ -67,7 +67,7 @@ def generatingData():
             # print(0, timestepBack, y)
         data += 1
 
-    #including those that are coming home at that timestepHours
+    # including those that are coming home at that timestepHours
     building.buildingArr = timestepArray
 
 
@@ -118,6 +118,7 @@ def chooseActions(actionIndex, index, building):
         carryPassenger(lift[index].position, index, building)
         return calculateCost(building)
 
+
 # check whether does that floor has people
 def checkFloor(building):
     liftArr = building.lifts
@@ -130,7 +131,7 @@ def carryPassenger(position, index, building):
     lift = building.lifts
     building_array = building.buildingArr
     personAtThatFloor = building_array[position]
-    print('People at floor ', position , ':', personAtThatFloor)
+    print('People at floor ', position, ':', personAtThatFloor)
     # copy the array that the lift is going to carrying into the lift carrying array
 
     # initialise the building array into none
@@ -159,13 +160,16 @@ def dropPassenger(index, building):
             if carrying[x].dest == lift.position:
                 if groundFloor:
                     # generate coming back data
-                    timestepHoursBack = np.random.randint(timestepHours, 24)
+                    if timestepHours != 24:
+                        timestepHoursBack = np.random.randint(timestepHours, 24)
+                    else:
+                        timestepHoursBack = 0
                     j = 0
-                    while x < MAX_PERSON and comingBackArray[0][timestepHoursBack][j] is not None:
+                    while j < MAX_PERSON and comingBackArray[0][timestepHoursBack][j] is not None:
                         j = j + 1
-                    if x < MAX_PERSON:
+                    if j < MAX_PERSON:
                         comingBackArray[0][timestepHoursBack][j] = Person(timestepHours, carrying[x].position, 0)
-                        print('=== Person coming back at', timestepHoursBack,  '====')
+                        print('=== Person coming back at', timestepHoursBack, '====')
                 del carrying[x]
                 x = x - 1
         x += 1
@@ -186,22 +190,22 @@ def calculateCost(building):
 
     return reward
 
+
 def printObsSpace():
     for n in range(NUM_FLOORS):
         print(observation_space[NUM_FLOORS - n - 1])
-# creating objects
+
 r_All = 0
 os.system('cls')
 for e in range(NUM_EPISODES):
     while timestepHours != 24:
-
 
         r = 0
         print('==== episode', e, '====')
         print('====timestep', timestep, '====')
         print('==== timestepHours', timestepHours, '====')
         if timestep % 60 == 0:
-            #print('=== Generating more HOOMANs ===')
+            # print('=== Generating more HOOMANs ===')
             generatingData()
             createObsSpace(timestepHours, building)
             checkFloor(building)
@@ -214,8 +218,13 @@ for e in range(NUM_EPISODES):
 
         # replace this part with the agent
         '''
-        include your agent class here
+        implement your A.I here
         '''
+
+        '''
+        End of A.I class
+        '''
+
         action = int(input())
         timestep = timestep + 1
         timestepHours = math.floor(timestep / 60)
@@ -232,4 +241,3 @@ for e in range(NUM_EPISODES):
 
         createObsSpace(timestepHours, building)
         r_All = r_All + r
-        # print(building.buildingArr)
