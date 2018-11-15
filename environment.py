@@ -1,28 +1,48 @@
-import random
-
+import copy
 import numpy as np
 import math
-import os
+import sys
+import random
 
 # initializing hyper parameters
-from Obj import Person, Building
+from Obj import *
 
+# Global constants [UPPER CASE]
+REWARD_SCALAR = 0.000000000001
 NUM_FLOORS = 12
 NUM_LIFTS = 2
 ACTION_SPACE_n = pow(3, NUM_LIFTS)
-timestep = 0
-timestepHours = 0
+LIFT_STARTING_FLOOR = 0
+DAY_HOURS = 24
+DAY_MINUTES = 1440
+NUM_EPISODES = 1000
 MAX_PERSON = 10
-NUM_EPISODES = 1
+
+# Global variables [Camel Case]
+timestepMinutes = 0
+timestepHours = 0
 
 # initializing action space
-action_space = np.ndarray(shape=(ACTION_SPACE_n, NUM_LIFTS), dtype=int)
-x = 0
-for i in range(3):
-    for j in range(3):
-        action_space[x][0] = i
-        action_space[x][1] = j
-        x = x + 1
+action_space = np.zeros(shape=(ACTION_SPACE_n, NUM_LIFTS), dtype=int)
+
+# Pre-compute power array
+pow_array = np.zeros(NUM_LIFTS, dtype=int)
+for index in range(pow_array.size):
+    pow_array[index] = int(pow(3, NUM_LIFTS - index - 1))
+
+# Initialize elevator action space
+for action_index in range(ACTION_SPACE_n):
+    cumulativeSum = action_index
+    for lift_index in range(NUM_LIFTS):
+        lift_index_pow = pow_array[lift_index]
+        if cumulativeSum >= lift_index_pow * 2:
+            action_space[action_index][lift_index] = 2
+            cumulativeSum -= lift_index_pow * 2
+        elif cumulativeSum >= lift_index_pow:
+            action_space[action_index][lift_index] = 1
+            cumulativeSum -= lift_index_pow
+
+print(action_space)
 
 # initializing observational space
 '''
@@ -30,24 +50,42 @@ rows = number of floors
 1st column determins the button of the floor that is pressed
 subsequent columns are the num of lifts. 0 denoting that the lift is not at that floor and 1 denoting that the lift is at that floor
 '''
-observation_space = np.zeros(shape=(NUM_FLOORS, 1 + NUM_LIFTS), dtype=int)
-observation_space[0][1] = 1
-observation_space[0][2] = 1
+def printObsSpace():
+    for n in range(NUM_FLOORS):
+        print(observation_space[NUM_FLOORS - n - 1])
+
+
+observation_space = np.zeros(shape=(NUM_FLOORS, 1 + NUM_LIFTS), dtype=float)
+for lift in range(NUM_LIFTS):
+    observation_space[LIFT_STARTING_FLOOR][lift + 1] = 1
 
 # creating a 2-D array
 buildingsDATA = np.ndarray(shape=(NUM_FLOORS, MAX_PERSON), dtype=Person)
-comingBackArray = np.ndarray(shape=(NUM_FLOORS, 24, MAX_PERSON), dtype=Person)
-building = Building(buildingsDATA, NUM_LIFTS, NUM_FLOORS, 0)
+comingBackArray = np.ndarray(shape=(NUM_FLOORS, DAY_HOURS, MAX_PERSON), dtype=Person)
+building = Building(buildingsDATA, NUM_LIFTS, NUM_FLOORS, LIFT_STARTING_FLOOR)
+
+
+def countDestinations(carryingPerson):
+    total = 0
+    cumulativeDestination = 0
+    for i in range(len(carryingPerson)):
+        if carryingPerson[i] is not None:
+            total += 1
+            cumulativeDestination += int(carryingPerson[i].dest)
+
+    if total == 0:
+        return 0
+
+    return cumulativeDestination/total
 
 
 def generatingData():
-    comingBackArray = np.ndarray(shape=(NUM_FLOORS, 24, MAX_PERSON), dtype=Person)
+    comingBackArray = np.ndarray(shape=(NUM_FLOORS, DAY_HOURS, MAX_PERSON), dtype=Person)
     timestepArray = building.buildingArr
     # go out of the house
-    data = 0
-    while (data != 5):
+    data = 5
+    for iter in range(data):
         positionHome = np.random.randint(1, NUM_FLOORS)
-
         # print(positionHome, timestepHours)
         # if there are < MAXPERSON
         x = 0
@@ -65,23 +103,24 @@ def generatingData():
                 timestepArray[positionHome][x] = Person(timestepHours, 0, positionHome)
             # print(positionHome, timestepRand, x)
             # print(0, timestepBack, y)
-        data += 1
 
     # including those that are coming home at that timestepHours
     building.buildingArr = timestepArray
 
 
-def createObsSpace(timestepHours, buildingObj):
-    liftArr = buildingObj.lifts
-    buildingArr = buildingObj.buildingArr
+def updateObsSpace(building, obs):
+    liftArr = building.lifts
+    buildingArr = building.buildingArr
     for liftIndex in range(NUM_LIFTS):
-        observation_space[liftArr[liftIndex].prevPos][liftIndex + 1] = 0
-        observation_space[liftArr[liftIndex].position][liftIndex + 1] = 1
+        obs[liftArr[liftIndex].prevPos][liftIndex + 1] = 0
+        obs[liftArr[liftIndex].position][liftIndex + 1] \
+            = countDestinations(liftArr[liftIndex].carryingPerson) + 1
     for x in range(NUM_FLOORS):
         for y in range(MAX_PERSON):
-            if buildingArr[x][y] is not None and observation_space[x][0] == 0:
-                observation_space[x][0] = 1
+            if buildingArr[x][y] is not None:
+                obs[x][0] = 1
                 break
+            obs[x][0] = 0
 
 
 def chooseActions(actionIndex, index, building):
@@ -122,30 +161,29 @@ def chooseActions(actionIndex, index, building):
 # check whether does that floor has people
 def checkFloor(building):
     liftArr = building.lifts
-    print('====Additional Humans Going into the lift suddenly====')
+    # print('====Additional Humans Going into the lift suddenly====')
     for x in range(len(liftArr)):
         carryPassenger(liftArr[x].position, x, building)
 
 
-def carryPassenger(position, index, building):
+def carryPassenger(position, liftIndex, building):
     lift = building.lifts
     building_array = building.buildingArr
     personAtThatFloor = building_array[position]
-    print('People at floor ', position, ':', personAtThatFloor)
+    # print('People at floor ', position, ':', personAtThatFloor)
     # copy the array that the lift is going to carrying into the lift carrying array
 
     # initialise the building array into none
     for x in range(len(personAtThatFloor)):
         if personAtThatFloor[x] is not None:
-            lift[index].carryingPerson.append(personAtThatFloor[x])
+            lift[liftIndex].carryingPerson.append(personAtThatFloor[x])
         personAtThatFloor[x] = None
-    observation_space[position][0] = 0
     # print('Passenger in the lift ', index, ': ', lift[index].carryingPerson)
     # print('Resulting People at that floor: ', building_array[position][timestepHours])
 
 
-def dropPassenger(index, building):
-    lift = building.lifts[index]
+def dropPassenger(liftIndex, building):
+    lift = building.lifts[liftIndex]
     carrying = lift.carryingPerson
     reward = 0
     groundFloor = False
@@ -156,12 +194,12 @@ def dropPassenger(index, building):
         if carrying[x] is not None:
             # reward for completing the trip and also negative reward for the amount of waiting time occured
             # initialtime is in hours, converting it to minutes
-            reward = reward + (timestep - lift.carryingPerson[x].initialTime * 60) * -1
+            reward = reward + (timestepMinutes - lift.carryingPerson[x].initialTime * 60) * -1
             if carrying[x].dest == lift.position:
                 if groundFloor:
                     # generate coming back data
-                    if timestepHours != 24:
-                        timestepHoursBack = np.random.randint(timestepHours, 24)
+                    if timestepHours < DAY_HOURS:
+                        timestepHoursBack = np.random.randint(timestepHours, DAY_HOURS)
                     else:
                         timestepHoursBack = 0
                     j = 0
@@ -169,12 +207,12 @@ def dropPassenger(index, building):
                         j = j + 1
                     if j < MAX_PERSON:
                         comingBackArray[0][timestepHoursBack][j] = Person(timestepHours, carrying[x].position, 0)
-                        print('=== Person coming back at', timestepHoursBack, '====')
+                        # print('=== Person coming back at', timestepHoursBack, '====')
                 del carrying[x]
                 x = x - 1
         x += 1
-    print("Cost of Waiting time in the lift: ", reward)
-    return reward
+    # print("Cost of Waiting time in the lift: ", reward)
+    return reward * REWARD_SCALAR
 
 
 def calculateCost(building):
@@ -184,60 +222,131 @@ def calculateCost(building):
         personAtThatFloor = buildingArr[n]
         for x in range(len(personAtThatFloor)):
             if personAtThatFloor[x] is not None:
-                reward = reward + (timestep - personAtThatFloor[x].initialTime * 60) * -1
+                reward = reward + (timestepMinutes - personAtThatFloor[x].initialTime * 60) * -1
 
-    print("Cost of waiting time in the building", reward)
+    # print("Cost of waiting time in the building", reward)
+    return reward * REWARD_SCALAR
 
-    return reward
+
+def simulateAction(Agent, action):
+
+    buildingCopy = copy.deepcopy(building)
+    observationCopy = copy.deepcopy(observation_space)
+
+    for liftIndex in range(NUM_LIFTS):
+        liftAction = action_space[action][liftIndex]
+        chooseActions(liftAction, liftIndex, buildingCopy)
+
+    updateObsSpace(buildingCopy, observationCopy)
+    Agent.updateFeatureVector(observationCopy)
+    return Agent.calculateStateActionValue()
 
 
-def printObsSpace():
-    for n in range(NUM_FLOORS):
-        print(observation_space[NUM_FLOORS - n - 1])
 
-r_All = 0
-os.system('cls')
+def iterateState(action):
+    r = 0
+    global timestepMinutes, timestepHours
+    timestepMinutes += 1
+    timestepHours = math.floor(timestepMinutes / 60)
+    # os.system('cls')
+    for liftIndex in range(NUM_LIFTS):
+        a = action_space[action][liftIndex]
+        r = r + chooseActions(a, liftIndex, building)
+
+    updateObsSpace(building, observation_space)
+    return r
+
+
+# Initialize Agent and helper variables
+Agent = TD0FFA(NUM_LIFTS, NUM_FLOORS)
+WARMUP_TIME = 5000
+currentReward = 0
+episodeReward = 0
+bestReward = -1 * (sys.maxsize - 1)
+iterationNum = 0
+print("Num episodes: {}".format(NUM_EPISODES))
 for e in range(NUM_EPISODES):
-    while timestepHours != 24:
-
-        r = 0
-        print('==== episode', e, '====')
-        print('====timestep', timestep, '====')
-        print('==== timestepHours', timestepHours, '====')
-        if timestep % 60 == 0:
+    timestepHours = 0
+    timestepMinutes = 0
+    episodeReward = 0
+    while timestepHours < DAY_HOURS:
+        # print('==== episode', e, '====')
+        # print('====timestep', timestep, '====')
+        # print('==== timestepHours', timestepHours, '====')
+        if timestepMinutes % 60 == 0:
             # print('=== Generating more HOOMANs ===')
             generatingData()
-            createObsSpace(timestepHours, building)
+            updateObsSpace(building, observation_space)
             checkFloor(building)
 
-        print('Reward received at this timestep: ', r)
-        print('Accumulative Reward: ', r_All)
-        for liftIndex in range(NUM_LIFTS):
-            print(liftIndex, ":", "Carrying", building.lifts[liftIndex].carryingPerson)
-        printObsSpace()
+        # print('Reward received at this timestep: ', r)
+        # # print('Accumulative Reward: ', r_All)
+        # for liftIndex in range(NUM_LIFTS):
+        #     print(liftIndex, ":", "Carrying", building.lifts[liftIndex].carryingPerson)
+        # printObsSpace()
 
         # replace this part with the agent
         '''
-        implement your A.I here
+        MODEL FREE TD(0) with feature vector function approximation
         '''
+        # printObsSpace()
+
+        action = 0
+
+        # Epsilon Greedy Policy Improvement
+        if (random.uniform(0, 1) <= Agent.EPSILON):
+            action = random.randint(0, ACTION_SPACE_n - 1)
+        else:
+            bestStateActionValue = -1 * (sys.maxsize - 1)
+            bestActionIndex = 0
+            for possibleAction in range(ACTION_SPACE_n):
+                currentStateActionValue = simulateAction(Agent, possibleAction)
+                if (currentStateActionValue > bestStateActionValue):
+                    bestStateActionValue = currentStateActionValue
+                    bestActionIndex = possibleAction
+            action = bestActionIndex
+
+        currentReward = iterateState(action)
+        # print("Current Reward: {}".format(currentReward))
+        episodeReward += currentReward
+
+        # Update Feature vector
+        Agent.updateFeatureVector(observation_space)
+        iterationNum += 1
+        # Store first state action value and reward
+        if Agent.NOT_TAKEN_ACTION:
+            # print("Continuing")
+            Agent.NOT_TAKEN_ACTION = False
+            continue
+        elif Agent.WAITING_NEXT_ACTION:
+            # print("First Wait")
+            Agent.storeFirstStateActionValue(currentReward)
+        else:
+            # print("Updating")
+            Agent.updateWeightVector(currentReward)
 
         '''
         End of A.I class
         '''
 
-        action = int(input())
-        timestep = timestep + 1
-        timestepHours = math.floor(timestep / 60)
-        os.system('cls')
-        once = True
-        for liftIndex in range(NUM_LIFTS):
-            a = action_space[action][liftIndex]
-            if once:
-                r = r + chooseActions(a, liftIndex, building)
-            else:
-                chooseActions(a, liftIndex, building)
-            once = False
-            createObsSpace(timestepHours, building)
+    # Check reward
+    if episodeReward > bestReward:
+        bestReward = episodeReward
 
-        createObsSpace(timestepHours, building)
-        r_All = r_All + r
+    # Decay Epsilon
+    Agent.decayEpsilon()
+    print("Finished episode {}: [Total iterations: {}][Episode Reward: {}][Epsilon: {}]"
+          .format(e, iterationNum, episodeReward, Agent.EPSILON))
+
+    if e % 100 == 0:
+        print("Feature Vector: {}".format(len(Agent.featureVector)))
+        print(Agent.featureVector)
+        print("Weight Vector: {}".format(len(Agent.weightVector)))
+        print(Agent.weightVector)
+
+
+
+print("Total iterations: {}".format(iterationNum))
+print("Best reward: {}".format(bestReward))
+print("Final Weight Vector:")
+print(Agent.weightVector)
