@@ -8,15 +8,15 @@ import random
 from Obj import *
 
 # Global constants [UPPER CASE]
-REWARD_SCALAR = 0.000000000001
-NUM_FLOORS = 12
-NUM_LIFTS = 2
+REWARD_SCALAR = 0.000001
+NUM_FLOORS = 20
+NUM_LIFTS = 3
 ACTION_SPACE_n = pow(3, NUM_LIFTS)
 LIFT_STARTING_FLOOR = 0
 DAY_HOURS = 24
 DAY_MINUTES = 1440
-NUM_EPISODES = 1000
-MAX_PERSON = 10
+NUM_EPISODES = 2000
+MAX_PERSON = 20
 
 # Global variables [Camel Case]
 timestepMinutes = 0
@@ -24,6 +24,7 @@ timestepHours = 0
 
 # initializing action space
 action_space = np.zeros(shape=(ACTION_SPACE_n, NUM_LIFTS), dtype=int)
+
 
 # Pre-compute power array
 pow_array = np.zeros(NUM_LIFTS, dtype=int)
@@ -65,13 +66,13 @@ comingBackArray = np.ndarray(shape=(NUM_FLOORS, DAY_HOURS, MAX_PERSON), dtype=Pe
 building = Building(buildingsDATA, NUM_LIFTS, NUM_FLOORS, LIFT_STARTING_FLOOR)
 
 
-def countDestinations(carryingPerson):
+def countDestinations(carryingPerson, liftPosition):
     total = 0
     cumulativeDestination = 0
     for i in range(len(carryingPerson)):
         if carryingPerson[i] is not None:
             total += 1
-            cumulativeDestination += int(carryingPerson[i].dest)
+            cumulativeDestination += int(abs(carryingPerson[i].dest - liftPosition))
 
     if total == 0:
         return 0
@@ -113,8 +114,7 @@ def updateObsSpace(building, obs):
     buildingArr = building.buildingArr
     for liftIndex in range(NUM_LIFTS):
         obs[liftArr[liftIndex].prevPos][liftIndex + 1] = 0
-        obs[liftArr[liftIndex].position][liftIndex + 1] \
-            = countDestinations(liftArr[liftIndex].carryingPerson) + 1
+        obs[liftArr[liftIndex].position][liftIndex + 1] = 1
     for x in range(NUM_FLOORS):
         for y in range(MAX_PERSON):
             if buildingArr[x][y] is not None:
@@ -212,7 +212,7 @@ def dropPassenger(liftIndex, building):
                 x = x - 1
         x += 1
     # print("Cost of Waiting time in the lift: ", reward)
-    return reward * REWARD_SCALAR
+    return reward
 
 
 def calculateCost(building):
@@ -225,7 +225,7 @@ def calculateCost(building):
                 reward = reward + (timestepMinutes - personAtThatFloor[x].initialTime * 60) * -1
 
     # print("Cost of waiting time in the building", reward)
-    return reward * REWARD_SCALAR
+    return reward
 
 
 def simulateAction(Agent, action):
@@ -238,7 +238,7 @@ def simulateAction(Agent, action):
         chooseActions(liftAction, liftIndex, buildingCopy)
 
     updateObsSpace(buildingCopy, observationCopy)
-    Agent.updateFeatureVector(observationCopy)
+    Agent.updateFeatureVector(buildingCopy)
     return Agent.calculateStateActionValue()
 
 
@@ -251,11 +251,18 @@ def iterateState(action):
     # os.system('cls')
     for liftIndex in range(NUM_LIFTS):
         a = action_space[action][liftIndex]
-        r = r + chooseActions(a, liftIndex, building)
+        r += chooseActions(a, liftIndex, building)
+        if r > 0:
+            print('wtf')
 
     updateObsSpace(building, observation_space)
-    return r
+    return r * REWARD_SCALAR
 
+
+# File writing
+outputFile = open("result3.txt", "w")
+outputFile.write("Agent 3 Test result\n\n")
+outputFile.close()
 
 # Initialize Agent and helper variables
 Agent = TD0FFA(NUM_LIFTS, NUM_FLOORS)
@@ -269,6 +276,10 @@ for e in range(NUM_EPISODES):
     timestepHours = 0
     timestepMinutes = 0
     episodeReward = 0
+    buildingsDATA = np.ndarray(shape=(NUM_FLOORS, MAX_PERSON), dtype=Person)
+    comingBackArray = np.ndarray(shape=(NUM_FLOORS, DAY_HOURS, MAX_PERSON), dtype=Person)
+    building = Building(buildingsDATA, NUM_LIFTS, NUM_FLOORS, LIFT_STARTING_FLOOR)
+
     while timestepHours < DAY_HOURS:
         # print('==== episode', e, '====')
         # print('====timestep', timestep, '====')
@@ -310,8 +321,12 @@ for e in range(NUM_EPISODES):
         # print("Current Reward: {}".format(currentReward))
         episodeReward += currentReward
 
+        if (currentReward > 0):
+            print("NOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO" + str(timestepMinutes) , e)
+            printObsSpace()
+
         # Update Feature vector
-        Agent.updateFeatureVector(observation_space)
+        Agent.updateFeatureVector(building)
         iterationNum += 1
         # Store first state action value and reward
         if Agent.NOT_TAKEN_ACTION:
@@ -329,7 +344,10 @@ for e in range(NUM_EPISODES):
         End of A.I class
         '''
 
+
+
     # Check reward
+
     if episodeReward > bestReward:
         bestReward = episodeReward
 
@@ -337,6 +355,10 @@ for e in range(NUM_EPISODES):
     Agent.decayEpsilon()
     print("Finished episode {}: [Total iterations: {}][Episode Reward: {}][Epsilon: {}]"
           .format(e, iterationNum, episodeReward, Agent.EPSILON))
+
+    outputFile = open("result3.txt", "a")
+    outputFile.write(str(episodeReward) + "\n")
+    outputFile.close()
 
     if e % 100 == 0:
         print("Feature Vector: {}".format(len(Agent.featureVector)))

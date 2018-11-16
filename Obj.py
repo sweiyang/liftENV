@@ -34,8 +34,8 @@ class TD0FFA:
     def __init__(self, NUM_LIFTS, NUM_FLOORS):
         self.NOT_TAKEN_ACTION = True
         self.WAITING_NEXT_ACTION = True
-        self.LEARNING_RATE = 0.0005
-        self.DISCOUNT_RATE = 0.05
+        self.LEARNING_RATE = 0.000000005
+        self.DISCOUNT_RATE = 0.000005
         self.EPSILON = 1
         self.EPSILON_DECAY = 0.999
         self.CURR_STATE_ACTION = None
@@ -44,8 +44,8 @@ class TD0FFA:
         self.NUM_FLOORS = NUM_FLOORS
         self.NUM_LIFTS = NUM_LIFTS
         self.ACTION_SPACE = pow(3, NUM_LIFTS)
-        self.featureVector = np.zeros((2 * NUM_LIFTS), dtype=float)
-        self.weightVector = np.full((2 * NUM_LIFTS), -0.5, dtype=float)
+        self.featureVector = np.zeros((2 * NUM_LIFTS) + NUM_FLOORS + 1, dtype=float)
+        self.weightVector = np.full((2 * NUM_LIFTS) + NUM_FLOORS + 1, -0.5, dtype=float)
 
 
     def calculateStateActionValue(self):
@@ -54,28 +54,87 @@ class TD0FFA:
     def decayEpsilon(self):
         self.EPSILON = self.EPSILON * self.EPSILON_DECAY
 
-    def updateFeatureVector(self, observation_space):
+    def updateFeatureVector(self, clonedBuilding):
         # print("Before feature vector update")
         # print(self.featureVector)
-        # Update floor activations
-        # for floor in range(self.NUM_FLOORS):
-        #     self.featureVector[floor] = observation_space[floor][0]
 
-        # Update lift positions and carrying capacity
+        """
+        Features per elevator:
+            1. Number of people going up vs going down
+            2. Geometric distance to destination of passengers
+
+        Feature per floor:
+            1. Minimum distance to request per floor
+                -> Lift distance to request = (distance * number of passengers dest in opposite direction)
+
+        Global features:
+            1. Average distance between lifts
+        """
+
+        requestArray = clonedBuilding.buildingArr
+        liftArray = clonedBuilding.lifts
+
+        averageDistBetweenLift = 0
+        pairCounter = 0
         for lift in range(self.NUM_LIFTS):
-            featureVectorIndex =  (2 * lift)
-            liftLocation = 0
-            for floor in range(self.NUM_FLOORS):
-                if observation_space[floor][lift + 1] != 0:
-                    liftLocation = floor
+            favouredDirection = 0
+            geometricDist = 0
+            liftPosition = liftArray[lift].position
+            passengers = liftArray[lift].carryingPerson
+            for p in range(len(passengers)):
+                if passengers[p] is not None:
+                    pDest = passengers[p].dest
+                    if pDest > liftPosition:
+                        favouredDirection += 1
+                    elif pDest < liftPosition:
+                        favouredDirection -= 1
+
+                    euclideanDist = int(abs(liftPosition - pDest))
+                    if euclideanDist > 0:
+                        geometricDist += (1 - pow(0.5, euclideanDist)) * 2
+
+            featureIndex = (2 * lift)
+            self.featureVector[featureIndex] = favouredDirection
+            self.featureVector[featureIndex + 1] = geometricDist
+
+            # Calculate average distance pair
+            for nextLift in range(lift + 1, self.NUM_LIFTS):
+                currDist = abs(liftPosition - liftArray[nextLift].position)
+                averageDistBetweenLift = ((pairCounter * averageDistBetweenLift) + currDist)/(pairCounter + 1)
+                pairCounter += 1
+
+        self.featureVector[(2 * self.NUM_LIFTS) + self.NUM_FLOORS] = averageDistBetweenLift
+
+        # Minimum distance to request
+        for floor in range(self.NUM_FLOORS):
+            hasRequest = False
+            for r in range(requestArray[0].size):
+                if requestArray[floor][r] is not None:
+                    hasRequest = True
                     break
 
-            # print("Lift Location: {}".format(liftLocation))
-            # print("Average destination: {}".format(observation_space[liftLocation][lift + 1]))
-            # Position, normalized to [0, 1]
-            self.featureVector[featureVectorIndex] = liftLocation
-            # Average destination of passeners, normalized to [0, 1]
-            self.featureVector[featureVectorIndex + 1] = observation_space[liftLocation][lift + 1]
+            if hasRequest:
+                minDist = 1000000
+                for lift in range(self.NUM_LIFTS):
+                    liftPosition = liftArray[lift].position
+                    passengers = liftArray[lift].carryingPerson
+                    oppositePassengers = 1
+                    for p in range(len(passengers)):
+                        if passengers[p] is not None:
+                            pDest = passengers[p].dest
+                            if (pDest > liftPosition > floor) or (pDest < liftPosition < floor):
+                                oppositePassengers += 1
+
+                    currLiftDist = oppositePassengers * abs(floor - liftPosition)
+                    if currLiftDist < minDist:
+                        minDist = currLiftDist
+
+                self.featureVector[(2 * self.NUM_LIFTS) + floor] = minDist
+            else:
+                self.featureVector[(2 * self.NUM_LIFTS) + floor] = 0
+
+
+
 
         # print("After Updated vector")
         # print(self.featureVector)
@@ -98,7 +157,7 @@ class TD0FFA:
 
         deltaW = copy.deepcopy(self.featureVector)
         for i in range(self.featureVector.size):
-            deltaW[i] = deltaW[i] * min(gradient, 50)
+            deltaW[i] = deltaW[i] * gradient
 
         # print("DeltaW")
         # print(deltaW)
